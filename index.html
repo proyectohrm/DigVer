@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Dígito verificador Patentes (CABA) + Soporte Mercosur</title>
+  <style>
+    :root{
+      --bg:#f6f8fb; --card:#fff; --ink:#0f172a; --muted:#64748b; --accent:#0b5ed7; --ok:#10b981; --warn:#f59e0b; --err:#ef4444;
+    }
+    *{box-sizing:border-box}
+    body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial;background:linear-gradient(180deg,#eef3fb 0%,var(--bg) 100%);margin:0;padding:32px;display:flex;min-height:100vh;align-items:center;justify-content:center;color:var(--ink)}
+    .card{background:var(--card);border-radius:16px;box-shadow:0 10px 30px rgba(15,23,42,.08);padding:24px;max-width:760px;width:100%}
+    h1{margin:0 0 6px;font-size:22px}
+    p.lead{margin:0 0 18px;color:var(--muted);font-size:14px}
+    label{display:block;font-size:13px;color:#111827;margin-bottom:6px}
+    input[type="text"]{width:100%;padding:12px 14px;border-radius:10px;border:1px solid #e5eaf3;font-size:18px;outline:none}
+    .row{display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;align-items:center}
+    button{background:var(--accent);color:#fff;border:none;padding:10px 14px;border-radius:10px;cursor:pointer;font-weight:600}
+    .secondary{background:#334155}
+    .ghost{background:#e2e8f0;color:#111827}
+    .ok{color:var(--ok);font-weight:700}
+    .warn{color:var(--warn);font-weight:700}
+    .err{color:var(--err);font-weight:700}
+    .result{margin-top:14px;padding:14px;border-radius:12px;background:#f1f7ff;border:1px solid rgba(11,94,215,.1);font-size:16px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:12px}
+    .box{background:#f8fafc;border:1px solid #e5eaf3;border-radius:12px;padding:12px}
+    .box h3{margin:0 0 8px;font-size:14px}
+    code,kbd{background:#fff;padding:2px 6px;border-radius:6px;font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace}
+    footer{margin-top:16px;color:var(--muted);font-size:12px}
+    .pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid #e5eaf3;background:#fff}
+    .mono{font-family:ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace}
+    @media (max-width:760px){.grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <div class="card" role="main">
+    <h1>Dígito verificador — Patentes CABA</h1>
+    <p class="lead">Soporta detección automática de formato: <strong>ABC123</strong> (clásico CABA, con cálculo de DV) y <strong>AA111BB</strong> (Mercosur, validación y explicación).</p>
+
+    <label for="plate">Patente</label>
+    <input id="plate" type="text" placeholder="Ej: ABC123 o AA111BB" maxlength="12" autocomplete="off" />
+
+    <div class="row">
+      <button id="calcBtn">Calcular / Validar</button>
+      <button id="copyBtn" class="secondary">Copiar resultado</button>
+      <button id="clearBtn" class="ghost">Limpiar</button>
+      <span id="formatTag" class="pill">Formato: —</span>
+    </div>
+
+    <div id="out" class="result" aria-live="polite" style="display:none"></div>
+
+    <div class="grid">
+      <div class="box">
+        <h3>¿Qué hace?</h3>
+        <ul style="margin:0 0 0 18px; padding:0; line-height:1.5">
+          <li>Detecta si la patente es <span class="mono">ABC123</span> (clásica) o <span class="mono">AA111BB</span> (Mercosur).</li>
+          <li>Calcula el <strong>DV</strong> para <span class="mono">ABC123</span>.</li>
+          <li>Para <span class="mono">AA111BB</span> valida estructura y explica por qué no se calcula DV (no hay estándar público).</li>
+        </ul>
+      </div>
+      <div class="box">
+        <h3>Bookmarklet</h3>
+        <p style="margin:0 0 8px">Arrastrá este enlace a tu barra de marcadores y úsalo en cualquier página:</p>
+        <p style="margin:0">
+          <a id="bml" href="#" class="pill">DV Patente (ABC123)</a>
+        </p>
+        <p style="margin:8px 0 0;font-size:12px;color:#475569">El bookmarklet calcula DV solo si ingresás un formato <span class="mono">ABC123</span>. Para Mercosur muestra una nota.</p>
+      </div>
+    </div>
+
+    <div class="box" style="margin-top:12px">
+      <h3>Desglose del cálculo (ABC123)</h3>
+      <div id="details" style="font-size:14px;color:#334155">—</div>
+    </div>
+
+    <footer>
+      <strong>Importante:</strong> El algoritmo de DV implementado aplica al formato <span class="mono">ABC123</span> usado históricamente en CABA. Para <span class="mono">AA111BB</span> (Mercosur) actualmente no hay DV público/estándar: si tu organismo o sistema usa uno, pásame la especificación y lo agrego.
+    </footer>
+  </div>
+
+  <script>
+    // --- Utilidades DOM ---
+    const $ = s => document.querySelector(s);
+    const plateInput = $("#plate");
+    const out = $("#out");
+    const details = $("#details");
+    const formatTag = $("#formatTag");
+
+    // --- Tabla de letras (CABA ABC123) ---
+    // Cada letra -> dos dígitos. Se concatenan a las 3 cifras numéricas para obtener 9 dígitos.
+    const LETTER_MAP = {
+      A: "14", B: "01", C: "00", D: "16", E: "05", F: "20",
+      G: "19", H: "09", I: "24", J: "07", K: "21", L: "08",
+      M: "04", N: "13", O: "25", P: "22", Q: "18", R: "10",
+      S: "02", T: "06", U: "12", V: "23", W: "11", X: "03",
+      Y: "15", Z: "17"
+    };
+
+    // --- Detección de formato ---
+    function detectFormat(raw){
+      const s = String(raw).toUpperCase().replace(/[^A-Z0-9]/g,"");
+      if (/^[A-Z]{3}\d{3}$/.test(s)) return {fmt:"ABC123", norm:s};
+      if (/^[A-Z]{2}\d{3}[A-Z]{2}$/.test(s)) return {fmt:"AA111BB", norm:s};
+      return {fmt:"INVALID", norm:s};
+    }
+
+    // --- Reducir suma a un dígito ---
+    function reduceToSingleDigit(n){
+      let s = Math.abs(n);
+      while(s >= 10){
+        s = String(s).split("").reduce((a,b)=>a+Number(b),0);
+      }
+      return s;
+    }
+
+    // --- Cálculo DV para ABC123 ---
+    function computeDV_ABC123(plate){
+      const m = plate.match(/^([A-Z]{3})(\d{3})$/);
+      if(!m) return { ok:false, msg:"Formato inválido: se esperaba ABC123." };
+      const [_, letters, nums] = m;
+
+      // Mapear letras -> 6 dígitos
+      let numericSeq = "";
+      for(const ch of letters){
+        const val = LETTER_MAP[ch];
+        if(!val) return {ok:false, msg:"Letra inválida: "+ch};
+        numericSeq += val;
+      }
+      // + 3 dígitos de la patente
+      numericSeq += nums;
+
+      if(numericSeq.length !== 9) return {ok:false, msg:"Secuencia numérica incorrecta."};
+
+      const digits = numericSeq.split("").map(d=>+d);
+
+      // Agrupar alternando desde la derecha
+      let sumA = 0, sumB = 0, toggle = 0;
+      for(let i = digits.length - 1; i >= 0; i--){
+        if(toggle === 0){ sumA += digits[i]; toggle = 1; }
+        else { sumB += digits[i]; toggle = 0; }
+      }
+      const dvA = reduceToSingleDigit(sumA);
+      const dvB = reduceToSingleDigit(sumB);
+      const dv = `${dvA}${dvB}`;
+
+      return { ok:true, dv, numericSeq, digits, sumA, sumB, dvA, dvB };
+    }
+
+    function renderABC123(res, plate){
+      if(!res.ok){
+        out.style.display = "block";
+        out.style.background = "#fff0f0";
+        out.style.border = "1px solid rgba(239,68,68,.15)";
+        out.innerHTML = `<span class="err">Error:</span> ${res.msg}`;
+        details.textContent = "—";
+        return;
+      }
+      out.style.display = "block";
+      out.style.background = "#f1f7ff";
+      out.style.border = "1px solid rgba(11,94,215,.12)";
+      out.innerHTML = `
+        Patente: <strong>${plate}</strong><br />
+        Dígito verificador: <span style="font-size:20px;color:#0b5ed7"><strong>${res.dv}</strong></span>
+      `;
+      details.innerHTML = `
+        <div><strong>Secuencia (9 dígitos):</strong> <code>${res.numericSeq}</code></div>
+        <div><strong>Grupo A (desde la derecha, 1°, 3°, ...):</strong> suma=${res.sumA} → ${res.dvA}</div>
+        <div><strong>Grupo B (desde la derecha, 2°, 4°, ...):</strong> suma=${res.sumB} → ${res.dvB}</div>
+      `;
+    }
+
+    function renderMercosur(plate){
+      out.style.display = "block";
+      out.style.background = "#fffbea";
+      out.style.border = "1px solid rgba(245,158,11,.2)";
+      out.innerHTML = `
+        Patente: <strong>${plate}</strong><br />
+        <span class="warn">Formato Mercosur (AA111BB).</span> Se validó la estructura, pero actualmente no existe
+        un <em>algoritmo público estandarizado</em> de dígito verificador aplicable a este formato como el de CABA para ABC123.
+        Si tu organismo usa uno, compartime la especificación y lo integro.
+      `;
+      details.textContent = "—";
+    }
+
+    function renderInvalid(raw){
+      out.style.display = "block";
+      out.style.background = "#fff0f0";
+      out.style.border = "1px solid rgba(239,68,68,.15)";
+      out.innerHTML = `<span class="err">Formato no reconocido.</span> Ingresá <code>ABC123</code> o <code>AA111BB</code>. Detectado: <code>${raw}</code>`;
+      details.textContent = "—";
+    }
+
+    function updateFormatTag(fmt){
+      const map = {ABC123:"ABC123 (clásico CABA)", AA111BB:"AA111BB (Mercosur)", INVALID:"—"};
+      formatTag.textContent = "Formato: " + (map[fmt] || "—");
+    }
+
+    // Eventos
+    $("#calcBtn").addEventListener("click", ()=>{
+      const raw = plateInput.value.trim();
+      const {fmt, norm} = detectFormat(raw);
+      updateFormatTag(fmt);
+      if(fmt === "ABC123") renderABC123(computeDV_ABC123(norm), norm);
+      else if(fmt === "AA111BB") renderMercosur(norm);
+      else renderInvalid(norm);
+    });
+    plateInput.addEventListener("keydown", e => { if(e.key === "Enter") $("#calcBtn").click(); });
+    $("#copyBtn").addEventListener("click", ()=>{
+      const txt = out.textContent?.trim();
+      if(!txt) return;
+      navigator.clipboard?.writeText(txt).then(()=>{
+        $("#copyBtn").textContent = "Copiado ✅";
+        setTimeout(()=> $("#copyBtn").textContent = "Copiar resultado", 1200);
+      });
+    });
+    $("#clearBtn").addEventListener("click", ()=>{
+      plateInput.value = "";
+      out.style.display = "none";
+      details.textContent = "—";
+      updateFormatTag("INVALID");
+      plateInput.focus();
+    });
+
+    // Demo inicial
+    plateInput.value = "ABC123";
+    updateFormatTag("ABC123");
+
+    // --- Bookmarklet ---
+    const bookmarkletCode = `
+      (function(){
+        const LETTER_MAP={A:"14",B:"01",C:"00",D:"16",E:"05",F:"20",G:"19",H:"09",I:"24",J:"07",K:"21",L:"08",M:"04",N:"13",O:"25",P:"22",Q:"18",R:"10",S:"02",T:"06",U:"12",V:"23",W:"11",X:"03",Y:"15",Z:"17"};
+        function reduce(n){let s=Math.abs(n);while(s>=10){s=(""+s).split("").reduce((a,b)=>a+ +b,0)}return s}
+        function dvABC(p){const m=p.match(/^([A-Z]{3})(\\d{3})$/);if(!m)return null;const L=m[1],N=m[2];let seq="";for(const ch of L){if(!LETTER_MAP[ch])return null;seq+=LETTER_MAP[ch]}seq+=N;if(seq.length!==9)return null;const ds=[...seq].map(Number);let a=0,b=0,t=0;for(let i=ds.length-1;i>=0;i--){if(t===0){a+=ds[i];t=1}else{b+=ds[i];t=0}}return ""+reduce(a)+reduce(b)}
+        const raw=prompt("Ingresá patente (ABC123 o AA111BB):","ABC123");
+        if(!raw)return;
+        const s=raw.toUpperCase().replace(/[^A-Z0-9]/g,"");
+        if(/^([A-Z]{3})(\\d{3})$/.test(s)){
+          const dv=dvABC(s);
+          if(dv) alert("Patente: "+s+"\\nDV: "+dv);
+          else alert("No se pudo calcular DV.");
+        } else if(/^[A-Z]{2}\\d{3}[A-Z]{2}$/.test(s)){
+          alert("Formato Mercosur detectado (AA111BB).\\nNo hay DV público/estándar para este formato.");
+        } else {
+          alert("Formato no reconocido. Usá ABC123 o AA111BB.");
+        }
+      })();
+    `.trim().replace(/\n\s+/g,' ');
+    const bml = $("#bml");
+    bml.href = "javascript:" + encodeURIComponent(bookmarkletCode);
+    bml.title = "Arrastrá este botón a tu barra de marcadores";
+  </script>
+</body>
+</html>
